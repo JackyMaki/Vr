@@ -2,201 +2,67 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Orb Blaster VR</title>
-  <script src="https://cdn.jsdelivr.net/npm/aframe@1.7.1/dist/aframe-master.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Hollow Canopy</title>
   <style>
-    body { margin: 0; background: #000; font-family: system-ui, sans-serif; }
-    #hud {
-      position: fixed; top: 12px; left: 12px; z-index: 10; color: #fff;
-      background: rgba(0,0,0,.55); padding: 10px 14px; border-radius: 10px;
-      font-size: 15px; line-height: 1.5; max-width: 320px; pointer-events: none;
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+                 font-family: system-ui, -apple-system, sans-serif; color: #ddd; }
+    canvas { display: block; }
+    #hud { position: fixed; inset: 0; pointer-events: none; }
+    #panel {
+      position: absolute; top: 14px; left: 14px; max-width: 340px;
+      background: rgba(5, 8, 10, .72); border: 1px solid #2a3a33; border-radius: 10px;
+      padding: 12px 14px; font-size: 14px; line-height: 1.5; pointer-events: auto;
     }
-    #hud b { color: #ffd166; }
+    #panel h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: 2px; color: #b7ffcf; }
+    #panel .dim { color: #8a9a92; font-size: 12px; }
+    #status { margin-top: 8px; color: #ffd166; font-size: 13px; }
+    #vrbtn {
+      position: absolute; right: 16px; bottom: 16px; pointer-events: auto;
+      background: #0d1f16; color: #b7ffcf; border: 2px solid #3fbf7f; border-radius: 10px;
+      padding: 12px 20px; font-size: 16px; font-weight: 700; letter-spacing: 1px; cursor: pointer;
+    }
+    #vrbtn:disabled { opacity: .45; cursor: default; }
+    #crosshair {
+      position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+      border-radius: 50%; background: rgba(255,255,255,.7); box-shadow: 0 0 6px #000;
+    }
+    #vignette { position: absolute; inset: 0; background: radial-gradient(circle, transparent 55%, rgba(0,0,0,.75));
+                opacity: 1; }
+    #blood { position: absolute; inset: 0; background: radial-gradient(circle, rgba(120,0,0,0) 30%, rgba(90,0,0,.95));
+             opacity: 0; transition: opacity .25s; }
+    #fade { position: absolute; inset: 0; background: #000; opacity: 0; }
+    #dead { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            font-size: 64px; font-weight: 900; letter-spacing: 8px; color: #c00; opacity: 0;
+            text-shadow: 0 0 30px #600; }
+    #warn { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: #ff6b6b;
+            font-size: 15px; font-weight: 700; letter-spacing: 2px; text-shadow: 0 0 10px #000; opacity: 0; }
   </style>
 </head>
 <body>
   <div id="hud">
-    <div><b>Orb Blaster</b></div>
-    <div>Desktop: drag to look, click an orb to pop it.</div>
-    <div>VR: point a controller and pull the trigger.</div>
-    <div>Click the VR button (bottom right) on a headset.</div>
+    <div id="vignette"></div>
+    <div id="blood"></div>
+    <div id="fade"></div>
+    <div id="dead">YOU DIED</div>
+    <div id="warn">SOMETHING IS CLOSE</div>
+    <div id="crosshair"></div>
+    <div id="panel">
+      <h1>HOLLOW CANOPY</h1>
+      <div class="dim">A Gorilla Tag style horror game. You are a monkey. They are bigger.</div>
+      <div style="margin-top:8px">
+        <b>VR:</b> push off the ground and trees with your hands to move. Point at a screen and pull the trigger to use it.<br>
+        <b>Desktop:</b> click to look, <b>WASD</b> move, <b>Space</b> jump, <b>Shift</b> sprint, click screens to use them.
+      </div>
+      <div class="dim" style="margin-top:6px">The lit platform is safe. The fog is not.</div>
+      <div id="status">Loading...</div>
+    </div>
+    <button id="vrbtn" disabled>VR NOT AVAILABLE</button>
   </div>
-
-  <a-scene background="color: #0b1020" renderer="antialias: true; colorManagement: true">
-    <a-assets>
-      <a-mixin id="orb"
-        geometry="primitive: sphere; radius: 0.25"
-        material="shader: standard; metalness: 0.2; roughness: 0.4; emissiveIntensity: 0.4"></a-mixin>
-    </a-assets>
-
-    <!-- Environment -->
-    <a-entity light="type: ambient; intensity: 0.6"></a-entity>
-    <a-entity light="type: directional; intensity: 0.8" position="2 6 3"></a-entity>
-    <a-plane rotation="-90 0 0" width="40" height="40" color="#1b2a4a"
-             material="roughness: 1"></a-plane>
-    <a-entity id="grid"></a-entity>
-    <a-ring position="0 0.01 0" rotation="-90 0 0" radius-inner="0.9" radius-outer="1" color="#ffd166"></a-ring>
-
-    <!-- Score board floating in front of the player -->
-    <a-entity position="0 2.2 -4">
-      <a-plane width="3.2" height="1.1" color="#111a33" opacity="0.85"></a-plane>
-      <a-text id="scoreText" value="Score 0" align="center" position="0 0.25 0.01"
-              color="#ffd166" width="6"></a-text>
-      <a-text id="timeText" value="Pop an orb to start" align="center" position="0 -0.25 0.01"
-              color="#ffffff" width="4"></a-text>
-    </a-entity>
-
-    <!-- Orbs are spawned here -->
-    <a-entity id="orbs"></a-entity>
-
-    <!-- Player rig -->
-    <a-entity id="rig" position="0 0 0">
-      <a-entity id="head" camera look-controls position="0 1.6 0">
-        <a-entity id="mouseCursor" cursor="rayOrigin: mouse; fuse: false"
-                  raycaster="objects: .target"></a-entity>
-      </a-entity>
-      <a-entity id="leftHand" laser-controls="hand: left" raycaster="objects: .target; far: 30"
-                line="color: #4cc9f0; opacity: 0.8" shoot-on-trigger></a-entity>
-      <a-entity id="rightHand" laser-controls="hand: right" raycaster="objects: .target; far: 30"
-                line="color: #f72585; opacity: 0.8" shoot-on-trigger></a-entity>
-    </a-entity>
-  </a-scene>
-
-  <script>
-    // ---------- Game state ----------
-    const ROUND_SECONDS = 60;
-    const MAX_ORBS = 6;
-    const COLORS = ['#f72585', '#4cc9f0', '#ffd166', '#06d6a0', '#ff9f1c', '#b5179e'];
-    const game = { score: 0, timeLeft: ROUND_SECONDS, running: false, timer: null };
-
-    const $ = (id) => document.getElementById(id);
-
-    function setText(id, value) { $(id).setAttribute('value', value); }
-
-    function startRound() {
-      game.score = 0;
-      game.timeLeft = ROUND_SECONDS;
-      game.running = true;
-      setText('scoreText', 'Score 0');
-      setText('timeText', `Time ${game.timeLeft}`);
-      clearInterval(game.timer);
-      game.timer = setInterval(() => {
-        game.timeLeft -= 1;
-        setText('timeText', `Time ${game.timeLeft}`);
-        if (game.timeLeft <= 0) endRound();
-      }, 1000);
-    }
-
-    function endRound() {
-      clearInterval(game.timer);
-      game.running = false;
-      setText('timeText', `Final ${game.score}. Pop an orb to play again`);
-    }
-
-    function addScore(points) {
-      game.score += points;
-      setText('scoreText', `Score ${game.score}`);
-    }
-
-    // ---------- Orb spawning ----------
-    function randomBetween(a, b) { return a + Math.random() * (b - a); }
-
-    function spawnOrb() {
-      const orbs = $('orbs');
-      if (orbs.children.length >= MAX_ORBS) return;
-      const orb = document.createElement('a-entity');
-      orb.setAttribute('mixin', 'orb');
-      orb.classList.add('target');
-      orb.setAttribute('orb-behavior', '');
-      // Spawn in a wide arc in front of the player, 3 to 8 m away.
-      const angle = randomBetween(-Math.PI * 0.45, Math.PI * 0.45);
-      const dist = randomBetween(3, 8);
-      const x = Math.sin(angle) * dist;
-      const z = -Math.cos(angle) * dist;
-      const y = randomBetween(0.8, 3.2);
-      const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-      orb.setAttribute('position', `${x} ${y} ${z}`);
-      orb.setAttribute('material', 'color', color);
-      orb.setAttribute('material', 'emissive', color);
-      orbs.appendChild(orb);
-    }
-
-    setInterval(spawnOrb, 700);
-
-    // ---------- Orb behaviour: bob, drift, pop ----------
-    AFRAME.registerComponent('orb-behavior', {
-      init() {
-        this.t = Math.random() * Math.PI * 2;
-        this.base = this.el.object3D.position.clone();
-        this.speed = randomBetween(0.6, 1.4);
-        this.el.addEventListener('click', () => this.pop());
-        // Orbs that are never hit fade out after 6 seconds.
-        this.lifetime = 6000;
-        this.el.setAttribute('scale', '0.01 0.01 0.01');
-        this.el.setAttribute('animation__in', 'property: scale; to: 1 1 1; dur: 250; easing: easeOutBack');
-      },
-      tick(time, dt) {
-        this.t += dt / 1000 * this.speed;
-        const p = this.el.object3D.position;
-        p.y = this.base.y + Math.sin(this.t) * 0.3;
-        p.x = this.base.x + Math.cos(this.t * 0.7) * 0.4;
-        this.lifetime -= dt;
-        if (this.lifetime <= 0 && !this.popped) this.vanish();
-      },
-      pop() {
-        if (this.popped) return;
-        this.popped = true;
-        if (!game.running) startRound();
-        // Farther orbs are worth more.
-        const dist = this.el.object3D.position.length();
-        addScore(Math.max(1, Math.round(dist / 2)));
-        this.el.removeAttribute('animation__in');
-        this.el.setAttribute('animation__pop',
-          'property: scale; to: 1.8 1.8 1.8; dur: 120; easing: easeOutQuad');
-        this.el.setAttribute('animation__fade',
-          'property: material.opacity; to: 0; dur: 120');
-        this.el.setAttribute('material', 'transparent', true);
-        setTimeout(() => this.el.remove(), 130);
-      },
-      vanish() {
-        this.popped = true;
-        this.el.setAttribute('material', 'transparent', true);
-        this.el.setAttribute('animation__out', 'property: scale; to: 0.01 0.01 0.01; dur: 300');
-        setTimeout(() => this.el.remove(), 320);
-      }
-    });
-
-    // ---------- VR controller trigger -> click the orb under the laser ----------
-    AFRAME.registerComponent('shoot-on-trigger', {
-      init() {
-        const fire = () => {
-          const hits = this.el.components.raycaster && this.el.components.raycaster.intersectedEls;
-          if (hits && hits.length) hits[0].emit('click');
-        };
-        this.el.addEventListener('triggerdown', fire);
-        this.el.addEventListener('gripdown', fire);
-        this.el.addEventListener('abuttondown', fire);
-        this.el.addEventListener('xbuttondown', fire);
-      }
-    });
-
-    // ---------- Simple floor grid so the player has a sense of scale ----------
-    (function buildGrid() {
-      const grid = $('grid');
-      for (let i = -20; i <= 20; i += 2) {
-        const a = document.createElement('a-box');
-        a.setAttribute('position', `${i} 0.005 0`);
-        a.setAttribute('width', '0.02'); a.setAttribute('height', '0.01'); a.setAttribute('depth', '40');
-        a.setAttribute('color', '#2f4370');
-        grid.appendChild(a);
-        const b = document.createElement('a-box');
-        b.setAttribute('position', `0 0.005 ${i}`);
-        b.setAttribute('width', '40'); b.setAttribute('height', '0.01'); b.setAttribute('depth', '0.02');
-        b.setAttribute('color', '#2f4370');
-        grid.appendChild(b);
-      }
-    })();
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.js" } }
   </script>
+  <script src="./vendor/peerjs.min.js"></script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>
