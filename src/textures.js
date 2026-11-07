@@ -154,4 +154,51 @@ export const TEX = {
   bone: () => make('bone', 64, (g, s) => { grain(g, s, '#d8d0b8', 40, 800); }),
 };
 
+
+// ---------- Indoor set ----------
+TEX.wood = () => make('wood', 256, (g, s) => {
+  grain(g, s, '#7a5a3a', 50, 3000);
+  for (let y = 0; y < s; y += 64) { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, y, s, 3); for (let i = 0; i < 25; i++) { const v = 40 + rnd() * 60; g.strokeStyle = `rgba(${v},${v * 0.7},${v * 0.45},0.5)`; g.lineWidth = 1 + rnd(); const x = rnd() * s; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rnd() - 0.5) * 30, y + 64); g.stroke(); } }
+}, { repeat: 1 });
+TEX.plaster = () => make('plaster', 256, (g, s) => {
+  grain(g, s, '#8f8c84', 45, 7000);
+  for (let i = 0; i < 7; i++) { g.fillStyle = `rgba(60,50,40,${0.05 + rnd() * 0.12})`; g.beginPath(); g.ellipse(rnd() * s, rnd() * s, 10 + rnd() * 40, 10 + rnd() * 50, rnd() * 3, 0, 7); g.fill(); }
+  for (let i = 0; i < 14; i++) { g.strokeStyle = `rgba(30,30,30,${0.3 + rnd() * 0.4})`; g.lineWidth = 1 + rnd(); g.beginPath(); let x = rnd() * s, y = rnd() * s; g.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (rnd() - 0.5) * 40; y += rnd() * 30; g.lineTo(x, y); } g.stroke(); }
+  g.fillStyle = 'rgba(40,60,40,0.35)'; g.fillRect(0, s - 40, s, 40);   // grime line near the floor
+}, { repeat: 1 });
+TEX.tile = () => make('tile', 256, (g, s) => {
+  g.fillStyle = '#b8b8b0'; g.fillRect(0, 0, s, s);
+  g.strokeStyle = '#4a4a46'; g.lineWidth = 3;
+  for (let x = 0; x <= s; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, s); g.stroke(); g.beginPath(); g.moveTo(0, x); g.lineTo(s, x); g.stroke(); }
+  for (let i = 0; i < 2500; i++) { g.fillStyle = `rgba(60,55,50,${rnd() * 0.3})`; g.fillRect(rnd() * s, rnd() * s, 2, 2); }
+  for (let i = 0; i < 10; i++) { g.fillStyle = `rgba(90,30,25,${0.1 + rnd() * 0.35})`; g.beginPath(); g.ellipse(rnd() * s, rnd() * s, 6 + rnd() * 26, 4 + rnd() * 18, rnd() * 3, 0, 7); g.fill(); }
+}, { repeat: 1 });
+TEX.brick = () => make('brick', 256, (g, s) => {
+  g.fillStyle = '#4a4440'; g.fillRect(0, 0, s, s);
+  for (let y = 0; y < s; y += 32) for (let x = (y / 32) % 2 ? -32 : 0; x < s; x += 64) { const v = 60 + rnd() * 40; g.fillStyle = `rgb(${v + 20},${v},${v - 10})`; g.fillRect(x + 3, y + 3, 58, 26); }
+  for (let i = 0; i < 3000; i++) { g.fillStyle = `rgba(20,40,25,${rnd() * 0.35})`; g.fillRect(rnd() * s, rnd() * s, 2, 2); }   // slime
+}, { repeat: 1 });
+TEX.web = () => make('web', 128, (g, s) => {
+  g.clearRect(0, 0, s, s);
+  g.strokeStyle = 'rgba(230,230,230,0.8)'; g.lineWidth = 1.2;
+  const cx = 0, cy = 0;
+  for (let a = 0; a <= 10; a++) { const t = (a / 10) * Math.PI / 2; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(t) * s, cy + Math.sin(t) * s); g.stroke(); }
+  for (let r = 12; r < s; r += 12) { g.beginPath(); g.arc(cx, cy, r + rnd() * 4, 0, Math.PI / 2); g.stroke(); }
+});
+TEX.blood = () => make('blood', 128, (g, s) => {
+  g.clearRect(0, 0, s, s);
+  for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(${70 + rnd() * 40},0,${rnd() * 10},${0.5 + rnd() * 0.5})`; g.beginPath(); g.ellipse(s / 2 + (rnd() - 0.5) * 60, s / 2 + (rnd() - 0.5) * 60, 4 + rnd() * 22, 3 + rnd() * 16, rnd() * 3, 0, 7); g.fill(); }
+  for (let i = 0; i < 20; i++) { g.strokeStyle = 'rgba(80,0,5,0.8)'; g.lineWidth = 2 + rnd() * 3; g.beginPath(); g.moveTo(s / 2, s / 2); g.lineTo(s / 2 + (rnd() - 0.5) * 110, s / 2 + (rnd() - 0.5) * 110); g.stroke(); }
+});
+TEX.poster = () => make('poster', 128, (g, s) => {
+  g.fillStyle = '#d9d2b8'; g.fillRect(0, 0, s, s);
+  g.fillStyle = '#8a2a2a'; g.fillRect(10, 10, s - 20, 22);
+  g.fillStyle = '#333'; for (let y = 44; y < s - 8; y += 12) g.fillRect(12, y, s - 24 - rnd() * 40, 5);
+  for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(60,40,20,${rnd() * 0.3})`; g.fillRect(rnd() * s, rnd() * s, 2, 2); }
+});
+TEX.grate = () => make('grate', 64, (g, s) => {
+  g.fillStyle = '#2a2a2e'; g.fillRect(0, 0, s, s);
+  g.fillStyle = '#0a0a0a'; for (let y = 6; y < s; y += 12) g.fillRect(4, y, s - 8, 6);
+}, { repeat: 2 });
+
 export function tex(name) { return TEX[name](); }

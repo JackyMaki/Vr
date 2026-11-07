@@ -300,3 +300,31 @@ export function poseVictim(model, t, killer) {
     p.body.rotation.x = 1.4 * e; p.body.position.y = -0.8 * e;
   }
 }
+
+// Bake a posed model into one static geometry (for instanced corpses).
+export function bakeModel(root, filter) {
+  root.updateMatrixWorld(true);
+  const items = [];
+  root.traverse((o) => {
+    if (!o.isMesh || (filter && !filter(o))) return;
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    g.applyMatrix4(o.matrixWorld);
+    items.push({ geo: g });
+  });
+  return merge(items);
+}
+export function corpseGeometries() {
+  const m = buildMonkey({ color: 0x777777 });
+  const p = m.userData.parts;
+  // Lying on its side, arms out, no head.
+  p.body.rotation.set(1.45, 0, 0.25); p.body.position.y = -0.85;
+  p.head.visible = false;
+  m.userData.targets[0].set(-0.7, 0.05, 0.9); m.userData.targets[1].set(0.6, 0.05, 1.1);
+  animateMonkey(m, 0, 0, [m.userData.targets[0].clone(), m.userData.targets[1].clone()]);
+  const body = bakeModel(m, (o) => !isDescendant(o, p.head));
+  const h = buildHead(0x777777, false);
+  h.rotation.set(1.2, 0.4, 2.2); h.position.y = 0.25;
+  const head = bakeModel(h);
+  return { body, head };
+}
+function isDescendant(o, anc) { let n = o; while (n) { if (n === anc) return true; n = n.parent; } return false; }

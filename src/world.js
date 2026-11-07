@@ -2,20 +2,23 @@ import * as THREE from 'three';
 import { CFG } from './config.js';
 import { hash2, fbm } from './noise.js';
 import { tex } from './textures.js';
-import { shapedHeight, generateChunk, biomeAt, regionOf, regionFloor } from './biomes.js';
+import { shapedHeight, generateChunk, biomeAt } from './biomes.js';
+export { biomeAt };
+import { corpseGeometries } from './monkey.js';
 
 const _v = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _s = new THREE.Vector3();
+const _c = new THREE.Color();
 const _up = new THREE.Vector3(0, 1, 0);
 const _x = new THREE.Vector3(1, 0, 0);
 
 export function groundHeight(x, z) {
   const d = Math.hypot(x, z);
   if (d < CFG.safeRadius) return 0.5;
-  const t = shapedHeight(x, z) * smooth(CFG.safeRadius + 3, CFG.safeRadius + 32, d);
+  const t = shapedHeight(x, z) * smooth(CFG.safeRadius + 3, CFG.safeRadius + 20, d);
   if (d < CFG.safeRadius + 2) return 0.5 * (1 - (d - CFG.safeRadius) / 2) + t;
   return t;
 }
@@ -38,7 +41,19 @@ function merge(items) {
   out.setAttribute('uv', new THREE.BufferAttribute(cat(uv), 2));
   return out;
 }
-const rep = (name, r) => { const t = tex(name).clone(); t.repeat.set(r, r); t.needsUpdate = true; return t; };
+const rep = (name, r, r2) => { const t = tex(name).clone(); t.repeat.set(r, r2 === undefined ? r : r2); t.needsUpdate = true; return t; };
+const B = (w, h, d, pos, rot) => ({ geo: new THREE.BoxGeometry(w, h, d), pos, rot });
+const C = (r1, r2, h, n, pos, rot) => ({ geo: new THREE.CylinderGeometry(r1, r2, h, n), pos, rot });
+const S = (r, pos, scale) => ({ geo: new THREE.SphereGeometry(r, 6, 4), pos, scale });
+
+// The generated content is cached so neighbours' lights can be sampled for baking.
+const genCache = new Map();
+export function chunkContent(cx, cz) {
+  const k = cx + ',' + cz;
+  let c = genCache.get(k);
+  if (!c) { c = generateChunk(cx, cz, groundHeight); genCache.set(k, c); if (genCache.size > 400) genCache.delete(genCache.keys().next().value); }
+  return c;
+}
 
 export class World {
   constructor(scene) {
@@ -46,93 +61,168 @@ export class World {
     this.chunks = new Map();
     this.loadedKeys = new Set();
     this.lastCenter = null;
-    this.onItems = null;      // (chunkKey, items[]) when a chunk loads; (chunkKey, null) when it unloads
+    this.onItems = null;
+    this.flickerPools = [];
+    this.time = 0;
 
-    this.terrainMat = new THREE.MeshPhongMaterial({ map: tex('ground'), vertexColors: true, shininess: 2 });
+    this.terrainMat = new THREE.MeshPhongMaterial({ map: tex('ground'), vertexColors: true, shininess: 4 });
+    const ceil = (name, r, color, extra = {}) => new THREE.MeshPhongMaterial({ map: rep(name, r), color, vertexColors: true, side: THREE.DoubleSide, ...extra });
     this.ceilMats = {
-      backrooms: new THREE.MeshPhongMaterial({ map: rep('ceilingTile', 6), color: 0xbdb8a8, side: THREE.DoubleSide }),
-      cave: new THREE.MeshPhongMaterial({ map: rep('rock', 5), color: 0x8a8a90, vertexColors: true, flatShading: true, side: THREE.DoubleSide }),
-      factory: new THREE.MeshPhongMaterial({ map: rep('metal', 8), color: 0x555a60, side: THREE.DoubleSide }),
+      halls: ceil('ceilingTile', 6, 0xbdb8a8), morgue: ceil('tile', 6, 0xd0d0c8), backrooms: ceil('ceilingTile', 6, 0xbdb8a8),
+      cave: ceil('rock', 5, 0x8a8a90, { flatShading: true }), factory: ceil('metal', 8, 0x555a60), sewer: ceil('brick', 6, 0x8a8078),
+      atrium: ceil('metal', 10, 0x3a3e44),
     };
-    this.waterMat = new THREE.MeshPhongMaterial({ map: tex('water'), color: 0x5a7a70, transparent: true, opacity: 0.72, shininess: 80, specular: 0x88aaa0 });
+    this.waterMat = new THREE.MeshPhongMaterial({ map: tex('water'), color: 0x4a6a50, transparent: true, opacity: 0.75, shininess: 80, specular: 0x88aaa0 });
     this.buildPools();
     this.buildSpawn();
   }
 
-  // ---------- Instanced prop pools: one draw call per pool, world wide ----------
+  // ---------- Instanced prop pools ----------
   buildPools() {
-    const P = (geo, mat, cap = 900) => ({ geo, mat, cap });
+    const P = (geo, mat, cap = 900, opts = {}) => ({ geo, mat, cap, ...opts });
     const base = (g) => { g.translate(0, 0.5, 0); return g; };
-    const bark = new THREE.MeshPhongMaterial({ map: tex('bark'), color: 0x8a6a4a, shininess: 2 });
-    const darkBark = new THREE.MeshPhongMaterial({ map: tex('bark'), color: 0x4a3a30, shininess: 2 });
-    const leaves = new THREE.MeshPhongMaterial({ map: tex('leaves'), color: 0x5a8a50, shininess: 1, flatShading: true });
-    const rockM = new THREE.MeshPhongMaterial({ map: tex('rock'), color: 0x9a9a9a, flatShading: true, shininess: 4 });
+    const phong = (o) => new THREE.MeshPhongMaterial(o);
+    const bark = phong({ map: tex('bark'), color: 0x8a6a4a, shininess: 2 });
+    const darkBark = phong({ map: tex('bark'), color: 0x4a3a30, shininess: 2 });
+    const leaves = phong({ map: tex('leaves'), color: 0x5a8a50, shininess: 1, flatShading: true });
+    const rockM = phong({ map: tex('rock'), color: 0x9a9a9a, flatShading: true, shininess: 4 });
     const green = new THREE.MeshLambertMaterial({ color: 0x2f5a2a });
-    const metal = new THREE.MeshPhongMaterial({ map: rep('metal', 2), color: 0x9aa0a6, shininess: 40, specular: 0x666666 });
-    const metalBig = new THREE.MeshPhongMaterial({ map: rep('metal', 3), color: 0x7a8088, shininess: 40, specular: 0x666666 });
-    const paper = new THREE.MeshPhongMaterial({ map: rep('wallpaper', 1.5), color: 0xffffff, shininess: 3 });
-    const stoneM = new THREE.MeshPhongMaterial({ map: tex('stone'), color: 0x9a968e, shininess: 3 });
-    const caveWall = new THREE.MeshPhongMaterial({ map: rep('rock', 2), color: 0x8a8a90, flatShading: true });
+    const metal = phong({ map: rep('metal', 2), color: 0x9aa0a6, shininess: 40, specular: 0x666666 });
+    const metalBig = phong({ map: rep('metal', 3), color: 0x7a8088, shininess: 40, specular: 0x666666 });
+    const metalDark = phong({ map: rep('metal', 1.5), color: 0x50545a, shininess: 30 });
+    const paper = phong({ map: rep('wallpaper', 1.5), color: 0xffffff, shininess: 3 });
+    const plaster = phong({ map: rep('plaster', 1.5, 1), color: 0xb8b4aa, shininess: 2 });
+    const brick = phong({ map: rep('brick', 2, 2.6), color: 0xa09890, shininess: 2 });
+    const tile = phong({ map: rep('tile', 2, 2.2), color: 0xd8d8d0, shininess: 25 });
+    const wood = phong({ map: tex('wood'), color: 0xa0876a, shininess: 6 });
+    const stoneM = phong({ map: tex('stone'), color: 0x9a968e, shininess: 3 });
+    const caveWall = phong({ map: rep('rock', 2), color: 0x8a8a90, flatShading: true });
+    const cloth = phong({ map: tex('skin'), color: 0x8a8a7a, shininess: 1 });
+    const bone = phong({ map: tex('bone'), color: 0xd8d0b8, flatShading: true });
+    const corpseMat = phong({ map: tex('fur'), color: 0x5a4a44, flatShading: true, shininess: 2 });
+    const decal = (name, color, opacity = 1) => phong({ map: tex(name), color, transparent: true, alphaTest: 0.15, depthWrite: false, opacity, polygonOffset: true, polygonOffsetFactor: -2, side: THREE.DoubleSide, shininess: 0 });
+    const emis = (color) => new THREE.MeshBasicMaterial({ color });
+    const corpse = corpseGeometries();
     const defs = {
-      trunk: P(base(new THREE.CylinderGeometry(0.3, 0.45, 1, 7)), bark, 1000),
-      canopy: P(base(new THREE.ConeGeometry(1, 1, 8)), leaves, 2600),
-      dead: P(base(new THREE.CylinderGeometry(0.12, 0.4, 1, 6)), darkBark, 600),
-      branch: P(new THREE.CylinderGeometry(0.05, 0.1, 1, 5).rotateZ(-Math.PI / 2).translate(0.5, 0, 0), darkBark, 1200),
-      rock: P(new THREE.SphereGeometry(1, 6, 4), rockM, 600),
-      bush: P(new THREE.SphereGeometry(1, 6, 4), leaves, 800),
-      grass: P(merge([{ geo: new THREE.ConeGeometry(0.06, 0.5, 3), pos: [0, 0.25, 0] }, { geo: new THREE.ConeGeometry(0.05, 0.4, 3), pos: [0.08, 0.2, 0.04], rot: [0.2, 0, -0.3] }, { geo: new THREE.ConeGeometry(0.05, 0.45, 3), pos: [-0.07, 0.22, -0.03], rot: [-0.2, 0, 0.3] }]), green, 3000),
-      mushroom: P(merge([{ geo: new THREE.CylinderGeometry(0.05, 0.07, 0.25, 5), pos: [0, 0.12, 0] }, { geo: new THREE.SphereGeometry(0.16, 7, 4), pos: [0, 0.26, 0], scale: [1, 0.55, 1] }]), new THREE.MeshPhongMaterial({ color: 0x8a5a3a, flatShading: true }), 500),
-      glowshroom: P(merge([{ geo: new THREE.CylinderGeometry(0.05, 0.07, 0.25, 5), pos: [0, 0.12, 0] }, { geo: new THREE.SphereGeometry(0.16, 7, 4), pos: [0, 0.26, 0], scale: [1, 0.55, 1] }]), new THREE.MeshPhongMaterial({ color: 0x3aaa9a, emissive: 0x2a8a7a, emissiveIntensity: 1.2, flatShading: true }), 500),
-      log: P(new THREE.CylinderGeometry(0.3, 0.35, 3, 7).rotateZ(Math.PI / 2), bark, 300),
-      stalag: P(base(new THREE.ConeGeometry(1, 1, 6)), rockM, 900),
-      stalac: P(new THREE.ConeGeometry(1, 1, 6).rotateX(Math.PI).translate(0, -0.5, 0), rockM, 1200),
-      pillar: P(base(new THREE.CylinderGeometry(1, 1.25, 1, 7)), caveWall, 300),
-      wallPaper: P(base(new THREE.BoxGeometry(3, 3, 0.3)), paper, 2500),
+      // Nature (atrium).
+      trunk: P(base(new THREE.CylinderGeometry(0.3, 0.45, 1, 7)), bark, 500),
+      canopy: P(base(new THREE.ConeGeometry(1, 1, 8)), leaves, 1500),
+      dead: P(base(new THREE.CylinderGeometry(0.12, 0.4, 1, 6)), darkBark, 300),
+      rock: P(new THREE.SphereGeometry(1, 6, 4), rockM, 400),
+      bush: P(new THREE.SphereGeometry(1, 6, 4), leaves, 600),
+      grass: P(merge([{ geo: new THREE.ConeGeometry(0.06, 0.5, 3), pos: [0, 0.25, 0] }, { geo: new THREE.ConeGeometry(0.05, 0.4, 3), pos: [0.08, 0.2, 0.04], rot: [0.2, 0, -0.3] }, { geo: new THREE.ConeGeometry(0.05, 0.45, 3), pos: [-0.07, 0.22, -0.03], rot: [-0.2, 0, 0.3] }]), green, 2500),
+      mushroom: P(merge([C(0.05, 0.07, 0.25, 5, [0, 0.12, 0]), S(0.16, [0, 0.26, 0], [1, 0.55, 1])]), phong({ color: 0x8a5a3a, flatShading: true }), 400),
+      glowshroom: P(merge([C(0.05, 0.07, 0.25, 5, [0, 0.12, 0]), S(0.16, [0, 0.26, 0], [1, 0.55, 1])]), phong({ color: 0x3aaa9a, emissive: 0x2a8a7a, emissiveIntensity: 1.2, flatShading: true }), 600),
+      planter: P(merge([B(3, 0.8, 1.2, [0, 0.4, 0]), { geo: new THREE.BoxGeometry(2.8, 0.1, 1.0), pos: [0, 0.82, 0] }]), wood, 200),
+      bench: P(merge([B(1.6, 0.08, 0.5, [0, 0.46, 0]), B(0.08, 0.46, 0.5, [-0.7, 0.23, 0]), B(0.08, 0.46, 0.5, [0.7, 0.23, 0]), B(1.6, 0.4, 0.06, [0, 0.72, -0.24], [-0.15, 0, 0])]), wood, 200),
+      skylight: P(new THREE.BoxGeometry(3, 0.1, 3), emis(0xbcd8ff), 300, { lightPool: true }),
+      beam: P(new THREE.BoxGeometry(8, 0.4, 0.3), metalDark, 300),
+      vine: P(new THREE.CylinderGeometry(0.03, 0.06, 1, 4).translate(0, -0.5, 0), green, 1200),
+      // Cave.
+      stalag: P(base(new THREE.ConeGeometry(1, 1, 6)), rockM, 700),
+      stalac: P(new THREE.ConeGeometry(1, 1, 6).rotateX(Math.PI).translate(0, -0.5, 0), rockM, 1000),
+      pillar: P(base(new THREE.CylinderGeometry(1, 1.25, 1, 7)), caveWall, 200),
+      bonepile: P(merge([S(0.12, [0, 0.1, 0], [1, 0.8, 1.1]), C(0.02, 0.02, 0.4, 5, [0.2, 0.05, 0.1], [0, 0.4, 1.57]), C(0.02, 0.02, 0.35, 5, [-0.15, 0.05, -0.1], [0, 1.2, 1.57]), S(0.05, [0.3, 0.04, 0.2]), S(0.06, [-0.3, 0.05, -0.2]), C(0.03, 0.03, 0.3, 5, [0, 0.04, 0.3], [0, 0, 1.57])]), bone, 400),
+      // Walls and doors.
+      wallPaper: P(base(new THREE.BoxGeometry(3, 3, 0.3)), paper, 2000),
       wallMetal: P(base(new THREE.BoxGeometry(3, 7, 0.3)), metalBig, 800),
       wallRock: P(base(new THREE.BoxGeometry(3, 6, 0.6)), caveWall, 800),
-      machine: P(merge([{ geo: new THREE.BoxGeometry(3, 2.2, 2), pos: [0, 1.1, 0] }, { geo: new THREE.BoxGeometry(1.2, 0.5, 1.2), pos: [0.6, 2.45, 0] }, { geo: new THREE.CylinderGeometry(0.3, 0.3, 1.2, 8), pos: [-0.9, 2.7, 0.3] }, { geo: new THREE.BoxGeometry(0.6, 0.6, 0.1), pos: [1.0, 1.4, 1.05] }]), metal, 300),
+      wallHall: P(base(new THREE.BoxGeometry(3, 3.4, 0.3)), plaster, 3000),
+      wallBrick: P(base(new THREE.BoxGeometry(3, 4, 0.4)), brick, 1200),
+      wallTile: P(base(new THREE.BoxGeometry(3, 3.2, 0.3)), tile, 1200),
+      doorFrame: P(merge([B(0.2, 2.3, 0.35, [-1.3, 1.15, 0]), B(0.2, 2.3, 0.35, [1.3, 1.15, 0]), B(2.8, 0.25, 0.35, [0, 2.42, 0])]), metalDark, 1500),
+      door: P(merge([B(1.1, 2.2, 0.08, [0.55, 1.1, 0]), S(0.04, [1.0, 1.05, 0.06])]), wood, 600),
+      // Furniture and clutter.
+      locker: P(merge([B(0.6, 2, 0.5, [0, 1, 0]), B(0.4, 0.03, 0.02, [0, 1.5, 0.26]), B(0.4, 0.03, 0.02, [0, 1.42, 0.26]), B(0.4, 0.03, 0.02, [0, 1.34, 0.26]), B(0.05, 0.12, 0.03, [0.2, 1.0, 0.26])]), metalDark, 800),
+      desk: P(merge([B(1.6, 0.06, 0.8, [0, 0.75, 0]), B(0.5, 0.72, 0.75, [-0.5, 0.36, 0]), B(0.06, 0.72, 0.75, [0.75, 0.36, 0])]), wood, 400),
+      chair: P(merge([B(0.45, 0.05, 0.45, [0, 0.45, 0]), B(0.45, 0.5, 0.05, [0, 0.72, -0.2]), C(0.02, 0.02, 0.45, 4, [-0.18, 0.22, -0.18]), C(0.02, 0.02, 0.45, 4, [0.18, 0.22, -0.18]), C(0.02, 0.02, 0.45, 4, [-0.18, 0.22, 0.18]), C(0.02, 0.02, 0.45, 4, [0.18, 0.22, 0.18])]), metalDark, 600),
+      monitor: P(merge([B(0.5, 0.35, 0.05, [0, 0.3, 0]), B(0.15, 0.1, 0.1, [0, 0.05, 0]), B(0.3, 0.02, 0.2, [0, 0.01, 0])]), metalDark, 400),
+      crate: P(merge([B(1, 1, 1, [0, 0.5, 0]), B(1.04, 0.08, 0.08, [0, 0.5, 0.5]), B(0.08, 1.04, 0.08, [0.5, 0.5, 0.5]), B(1.04, 0.08, 0.08, [0, 0.5, -0.5]), B(0.08, 1.04, 0.08, [-0.5, 0.5, 0.5])]), wood, 900),
+      shelf: P(merge([B(0.06, 2, 0.5, [-0.95, 1, 0]), B(0.06, 2, 0.5, [0.95, 1, 0]), B(1.9, 0.04, 0.5, [0, 0.4, 0]), B(1.9, 0.04, 0.5, [0, 1.0, 0]), B(1.9, 0.04, 0.5, [0, 1.6, 0]), B(0.4, 0.3, 0.3, [-0.5, 1.15, 0]), B(0.3, 0.25, 0.3, [0.4, 0.53, 0])]), wood, 500),
+      bed: P(merge([B(2, 0.15, 0.95, [0, 0.55, 0]), B(0.06, 0.9, 0.95, [-0.97, 0.45, 0]), B(0.06, 0.6, 0.95, [0.97, 0.3, 0]), C(0.03, 0.03, 0.45, 4, [-0.9, 0.22, 0.4]), C(0.03, 0.03, 0.45, 4, [0.9, 0.22, 0.4]), C(0.03, 0.03, 0.45, 4, [-0.9, 0.22, -0.4]), C(0.03, 0.03, 0.45, 4, [0.9, 0.22, -0.4])]), metalDark, 400),
+      mattress: P(new THREE.BoxGeometry(1.9, 0.15, 0.85).translate(0, 0.7, 0), cloth, 400),
+      corpse: P(corpse.body, corpseMat, 400),
+      corpseHead: P(corpse.head, corpseMat, 400),
+      debris: P(merge([B(0.3, 0.02, 0.4, [0, 0.01, 0], [0, 0.3, 0]), B(0.25, 0.02, 0.35, [0.3, 0.012, 0.2], [0, 1.2, 0]), B(0.4, 0.1, 0.1, [-0.3, 0.05, 0.1], [0, 0.5, 0]), S(0.06, [0.2, 0.05, -0.3])]), cloth, 800),
+      vent: P(merge([B(0.08, 0.5, 0.8, [0, 0, 0]), B(0.03, 0.03, 0.7, [0.05, 0.15, 0]), B(0.03, 0.03, 0.7, [0.05, 0.05, 0]), B(0.03, 0.03, 0.7, [0.05, -0.05, 0]), B(0.03, 0.03, 0.7, [0.05, -0.15, 0])]), metalDark, 400),
+      cable: P(new THREE.CylinderGeometry(0.03, 0.03, 6, 4).rotateZ(Math.PI / 2), phong({ color: 0x151515 }), 800),
       pipe: P(new THREE.CylinderGeometry(0.25, 0.25, 6, 8).rotateZ(Math.PI / 2), metal, 800),
-      barrel: P(merge([{ geo: new THREE.CylinderGeometry(0.45, 0.45, 1, 10), pos: [0, 0.5, 0] }, { geo: new THREE.TorusGeometry(0.46, 0.03, 4, 10).rotateX(Math.PI / 2), pos: [0, 0.25, 0] }, { geo: new THREE.TorusGeometry(0.46, 0.03, 4, 10).rotateX(Math.PI / 2), pos: [0, 0.75, 0] }]), new THREE.MeshPhongMaterial({ map: tex('metal'), color: 0x8a4a2a, shininess: 20 }), 600),
-      catwalk: P(merge([{ geo: new THREE.BoxGeometry(6, 0.2, 2), pos: [0, 0, 0] }, { geo: new THREE.BoxGeometry(6, 0.06, 0.06), pos: [0, 1, 0.95] }, { geo: new THREE.BoxGeometry(6, 0.06, 0.06), pos: [0, 1, -0.95] }, { geo: new THREE.BoxGeometry(0.06, 1, 0.06), pos: [-2.9, 0.5, 0.95] }, { geo: new THREE.BoxGeometry(0.06, 1, 0.06), pos: [2.9, 0.5, 0.95] }, { geo: new THREE.BoxGeometry(0.06, 1, 0.06), pos: [-2.9, 0.5, -0.95] }, { geo: new THREE.BoxGeometry(0.06, 1, 0.06), pos: [2.9, 0.5, -0.95] }, { geo: new THREE.BoxGeometry(0.15, 2.8, 0.15), pos: [-2.8, -1.4, -0.8] }, { geo: new THREE.BoxGeometry(0.15, 2.8, 0.15), pos: [2.8, -1.4, 0.8] }]), metal, 300),
-      tomb: P(merge([{ geo: new THREE.BoxGeometry(0.7, 0.9, 0.18), pos: [0, 0.45, 0] }, { geo: new THREE.CylinderGeometry(0.35, 0.35, 0.18, 8, 1, false, 0, Math.PI).rotateX(Math.PI / 2), pos: [0, 0.9, 0] }, { geo: new THREE.BoxGeometry(0.9, 0.15, 0.5), pos: [0, 0.07, 0.2] }]), stoneM, 900),
-      fence: P(merge([{ geo: new THREE.BoxGeometry(3, 0.08, 0.06), pos: [0, 0.5, 0] }, { geo: new THREE.BoxGeometry(3, 0.08, 0.06), pos: [0, 1.0, 0] }, { geo: new THREE.BoxGeometry(0.1, 1.3, 0.1), pos: [-1.4, 0.65, 0] }, { geo: new THREE.BoxGeometry(0.1, 1.3, 0.1), pos: [1.4, 0.65, 0] }, { geo: new THREE.BoxGeometry(0.1, 1.3, 0.1), pos: [0, 0.65, 0] }]), darkBark, 500),
-      panel: P(new THREE.BoxGeometry(1.2, 0.08, 0.6), new THREE.MeshBasicMaterial({ color: 0xf6f0cc }), 1200),
-      lamp: P(merge([{ geo: new THREE.ConeGeometry(0.5, 0.35, 8, 1, true), pos: [0, 0, 0] }, { geo: new THREE.SphereGeometry(0.12, 6, 5), pos: [0, -0.1, 0] }, { geo: new THREE.CylinderGeometry(0.02, 0.02, 2.5, 4), pos: [0, 1.4, 0] }]), new THREE.MeshBasicMaterial({ color: 0xffb060 }), 300),
-      reed: P(base(new THREE.ConeGeometry(0.03, 1.2, 3)), new THREE.MeshLambertMaterial({ color: 0x4a6a2a }), 3000),
+      chain: P(new THREE.CylinderGeometry(0.03, 0.03, 1, 4).translate(0, -0.5, 0), metalDark, 300),
+      wallLamp: P(merge([B(0.3, 0.12, 0.1, [0, 0, 0]), B(0.2, 0.06, 0.06, [0, 0, 0.08]), B(0.1, 0.3, 0.1, [0, -0.2, 0])]), emis(0xffe2a0), 600, { lightPool: true }),
+      panel: P(new THREE.BoxGeometry(1.2, 0.08, 0.6), emis(0xf6f0cc), 1500, { lightPool: true }),
+      lamp: P(merge([{ geo: new THREE.ConeGeometry(0.5, 0.35, 8, 1, true), pos: [0, 0, 0] }, S(0.12, [0, -0.1, 0]), C(0.02, 0.02, 2.5, 4, [0, 1.4, 0])]), emis(0xffb060), 300, { lightPool: true }),
+      // Factory.
+      machine: P(merge([B(3, 2.2, 2, [0, 1.1, 0]), B(1.2, 0.5, 1.2, [0.6, 2.45, 0]), C(0.3, 0.3, 1.2, 8, [-0.9, 2.7, 0.3]), B(0.6, 0.6, 0.1, [1.0, 1.4, 1.05]), B(0.2, 0.2, 0.1, [-0.8, 1.6, 1.05]), B(2.6, 0.1, 0.1, [0, 0.4, 1.05])]), metal, 300),
+      console: P(merge([B(0.8, 1.0, 0.5, [0, 0.5, 0]), B(0.8, 0.4, 0.5, [0, 1.1, -0.1], [-0.5, 0, 0])]), metalDark, 300),
+      barrel: P(merge([C(0.45, 0.45, 1, 10, [0, 0.5, 0]), { geo: new THREE.TorusGeometry(0.46, 0.03, 4, 10).rotateX(Math.PI / 2), pos: [0, 0.25, 0] }, { geo: new THREE.TorusGeometry(0.46, 0.03, 4, 10).rotateX(Math.PI / 2), pos: [0, 0.75, 0] }]), phong({ map: tex('metal'), color: 0x8a4a2a, shininess: 20 }), 600),
+      catwalk: P(merge([B(6, 0.2, 2, [0, 0, 0]), B(6, 0.06, 0.06, [0, 1, 0.95]), B(6, 0.06, 0.06, [0, 1, -0.95]), B(0.06, 1, 0.06, [-2.9, 0.5, 0.95]), B(0.06, 1, 0.06, [2.9, 0.5, 0.95]), B(0.06, 1, 0.06, [-2.9, 0.5, -0.95]), B(0.06, 1, 0.06, [2.9, 0.5, -0.95]), B(0.15, 2.8, 0.15, [-2.8, -1.4, -0.8]), B(0.15, 2.8, 0.15, [2.8, -1.4, 0.8])]), metal, 300),
+      grate: P(new THREE.PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2), phong({ map: tex('grate'), color: 0x8a8a8a, shininess: 40 }), 300),
+      // Morgue.
+      drawer: P(merge([B(0.9, 0.85, 1.0, [0, 0.45, 0]), B(0.3, 0.05, 0.03, [0, 0.45, 0.52]), B(0.6, 0.6, 0.02, [0, 0.45, 0.51])]), tile, 600),
+      drawerOpen: P(merge([B(0.8, 0.1, 1.6, [0, 0.0, 0]), B(0.8, 0.5, 0.06, [0, 0.25, 0.8])]), metalDark, 200),
+      slab: P(merge([B(2.0, 0.1, 0.9, [0, 0.85, 0]), B(0.4, 0.8, 0.4, [-0.6, 0.4, 0]), B(0.4, 0.8, 0.4, [0.6, 0.4, 0])]), tile, 300),
+      tray: P(merge([B(0.5, 0.05, 0.35, [0, 0.8, 0]), C(0.02, 0.02, 0.8, 4, [-0.2, 0.4, -0.15]), C(0.02, 0.02, 0.8, 4, [0.2, 0.4, 0.15]), S(0.03, [0.1, 0.84, 0]), B(0.2, 0.02, 0.03, [-0.1, 0.84, 0.05], [0, 0.5, 0])]), metal, 300),
+      sink: P(merge([B(0.6, 0.9, 0.5, [0, 0.45, 0]), B(0.5, 0.15, 0.4, [0, 0.85, 0]), C(0.02, 0.02, 0.3, 4, [0, 1.05, -0.15])]), tile, 300),
+      // Decals.
+      smear: P(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), decal('blood', 0xffffff), 900),
+      stain: P(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), decal('blood', 0x1a1a10, 0.7), 500),
+      web: P(new THREE.PlaneGeometry(1, 1).translate(0.5, -0.5, 0), decal('web', 0xffffff, 0.8), 500),
+      poster: P(new THREE.PlaneGeometry(0.5, 0.7), decal('poster', 0xffffff), 500),
     };
     this.pools = {};
     for (const [name, d] of Object.entries(defs)) {
       const im = new THREE.InstancedMesh(d.geo, d.mat, d.cap);
       im.count = 0; im.frustumCulled = false;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(d.cap * 3).fill(1), 3);
+      im.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      im.userData.lightPool = !!d.lightPool; im.userData.flicker = [];
       this.scene.add(im);
       this.pools[name] = im;
+      if (d.lightPool) this.flickerPools.push(im);
     }
   }
 
-  // ---------- Safe zone ----------
+  // ---------- Safe room ----------
   buildSpawn() {
     const g = new THREE.Group();
     const stone = new THREE.MeshPhongMaterial({ map: tex('stone'), color: 0x8a8680, shininess: 4 });
     const dark = new THREE.MeshPhongMaterial({ map: tex('metal'), color: 0x3a3a40, shininess: 30 });
+    const plaster = new THREE.MeshPhongMaterial({ map: rep('plaster', 8, 1.2), color: 0xa8a49a, shininess: 2 });
     const glow = new THREE.MeshBasicMaterial({ color: 0xffc777 });
+    const R = 15, H = 3.4;
 
     const disc = new THREE.Mesh(new THREE.CylinderGeometry(CFG.safeRadius, CFG.safeRadius + 1.2, 0.5, 40), stone);
     disc.position.y = 0.25; g.add(disc);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(CFG.safeRadius - 0.6, CFG.safeRadius - 0.2, 48),
-      new THREE.MeshBasicMaterial({ color: 0x5bff9e, side: THREE.DoubleSide }));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(CFG.safeRadius - 0.6, CFG.safeRadius - 0.2, 48), new THREE.MeshBasicMaterial({ color: 0x5bff9e, side: THREE.DoubleSide }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.505; g.add(ring);
 
-    const pillarGeo = new THREE.CylinderGeometry(0.3, 0.38, 3.2, 8);
-    const lampGeo = new THREE.SphereGeometry(0.28, 8, 6);
+    // Four walls with a doorway in the middle of each.
+    this.spawnColliders = [];
+    const wallGeo = new THREE.BoxGeometry(R - 1.5, H, 0.4);
+    for (const [ax, sign] of [['x', 1], ['x', -1], ['z', 1], ['z', -1]]) {
+      for (const side of [-1, 1]) {
+        const w = new THREE.Mesh(wallGeo, plaster);
+        const off = side * (1.5 + (R - 1.5) / 2);
+        if (ax === 'z') { w.position.set(off, H / 2, sign * R); this.spawnColliders.push({ kind: 'box', x: off, z: sign * R, hx: (R - 1.5) / 2, hz: 0.2, y0: 0, h: H }); }
+        else { w.position.set(sign * R, H / 2, off); w.rotation.y = Math.PI / 2; this.spawnColliders.push({ kind: 'box', x: sign * R, z: off, hx: 0.2, hz: (R - 1.5) / 2, y0: 0, h: H }); }
+        g.add(w);
+      }
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.5, 0.45), dark);
+      if (ax === 'z') lintel.position.set(0, H - 0.25, sign * R); else { lintel.position.set(sign * R, H - 0.25, 0); lintel.rotation.y = Math.PI / 2; }
+      g.add(lintel);
+    }
+
+    const pillarGeo = new THREE.CylinderGeometry(0.3, 0.38, 3.0, 8);
+    const lampGeo = new THREE.SphereGeometry(0.26, 8, 6);
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
       const x = Math.cos(a) * (CFG.safeRadius - 1.5), z = Math.sin(a) * (CFG.safeRadius - 1.5);
-      const p = new THREE.Mesh(pillarGeo, stone); p.position.set(x, 2.1, z); g.add(p);
-      const l = new THREE.Mesh(lampGeo, glow); l.position.set(x, 3.95, z); g.add(l);
+      const p = new THREE.Mesh(pillarGeo, stone); p.position.set(x, 1.9, z); g.add(p);
+      const l = new THREE.Mesh(lampGeo, glow); l.position.set(x, 3.0, z); g.add(l);
     }
-    const light = new THREE.PointLight(0xffb86b, 70, 42, 1.6);
-    light.position.set(0, 5, 0); g.add(light);
+    const light = new THREE.PointLight(0xffb86b, 60, 40, 1.6);
+    light.position.set(0, 3.0, 0); g.add(light);
 
     const totem = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 1.2), stone);
     totem.position.set(0, 1.6, 4); g.add(totem);
@@ -153,28 +243,48 @@ export class World {
     this.previewAnchor = new THREE.Object3D();
     this.previewAnchor.position.set(8.2, 1.0, -1.6); this.previewAnchor.rotation.y = -Math.PI / 2; g.add(this.previewAnchor);
 
-    // A guide board instead of HUD text: how to play, carved into the world.
     this.guideScreen = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
     this.guideScreen.position.set(-8.4, 2.0, 1.2); this.guideScreen.rotation.y = Math.PI / 2; this.guideScreen.name = 'guide'; g.add(this.guideScreen);
     const gframe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.75, 2.55), dark);
     gframe.position.set(-8.5, 2.0, 1.2); g.add(gframe);
 
-    // Starter throwables on the platform.
-    this.spawnItems = [{ type: 'rock', x: 2, y: 0.5, z: -3 }, { type: 'rock', x: -2.5, y: 0.5, z: -2 }, { type: 'bottle', x: 3, y: 0.5, z: 2 }, { type: 'brick', x: -3, y: 0.5, z: 3 }];
-
+    this.spawnItems = [{ type: 'rock', x: 2, y: 0.5, z: -3 }, { type: 'rock', x: -2.5, y: 0.5, z: -2 }, { type: 'bottle', x: 3, y: 0.5, z: 2 }, { type: 'brick', x: -3, y: 0.5, z: 3 }, { type: 'wrench', x: 4, y: 0.5, z: -5 }];
     this.spawnGroup = g;
     this.scene.add(g);
-    this.spawnColliders = [
+    this.spawnColliders.push(
       { kind: 'box', x: 0, z: 4, hx: 0.6, hz: 0.6, y0: 0.5, h: 2.2 },
       { kind: 'box', x: 0, z: -8, hx: 0.9, hz: 0.35, y0: 0.5, h: 1.0 },
       { kind: 'cyl', x: 8.2, z: -1.6, r: 0.75, y0: 0.5, h: 1.0 },
-    ];
+    );
+  }
+
+  // ---------- Baked light ----------
+  // Sum of lamp contributions around a point, as an RGB multiplier.
+  lightAt(x, y, z, out) {
+    const cs = CFG.chunkSize;
+    const cx = Math.floor(x / cs), cz = Math.floor(z / cs);
+    let r = 0.22, g = 0.22, b = 0.22;
+    const d0 = Math.hypot(x, z);
+    if (d0 < 24) { const k = 1.6 * Math.max(0, 1 - d0 / 24) ** 2; r += k; g += k * 0.8; b += k * 0.55; }
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      const c = genCache.get((cx + dx) + ',' + (cz + dz)) || chunkContent(cx + dx, cz + dz);
+      for (const L of c.lights) {
+        const d = Math.hypot(x - L.x, (y - L.y) * 0.45, z - L.z);
+        if (d >= L.r) continue;
+        const k = L.i * (1 - d / L.r) ** 1.6 * 1.9;
+        r += k * L.c[0]; g += k * L.c[1]; b += k * L.c[2];
+      }
+    }
+    out[0] = Math.min(1.9, r); out[1] = Math.min(1.9, g); out[2] = Math.min(1.9, b);
+    return out;
   }
 
   // ---------- Chunk streaming ----------
   key(cx, cz) { return cx + ',' + cz; }
 
-  update(centerPos) {
+  update(centerPos, dt = 0) {
+    this.time += dt;
+    this.flicker();
     const cs = CFG.chunkSize;
     const cx = Math.floor(centerPos.x / cs), cz = Math.floor(centerPos.z / cs);
     if (this.lastCenter && this.lastCenter.x === cx && this.lastCenter.z === cz) return;
@@ -196,7 +306,8 @@ export class World {
     const [cx, cz] = k.split(',').map(Number);
     const cs = CFG.chunkSize, seg = CFG.chunkSegments;
     const ox = cx * cs + cs / 2, oz = cz * cs + cs / 2;
-    const gen = generateChunk(cx, cz, groundHeight);
+    const gen = chunkContent(cx, cz);
+    const lit = [0, 0, 0];
 
     const geo = new THREE.PlaneGeometry(cs, cs, seg, seg);
     geo.rotateX(-Math.PI / 2);
@@ -207,16 +318,11 @@ export class World {
       let h = groundHeight(wx, wz);
       if (Math.hypot(wx, wz) < CFG.safeRadius + 1.3) h = Math.min(h, 0.1);
       pos.setY(i, h);
-      uvs.setXY(i, wx / cs, wz / cs);       // world-space UVs so the grain tiles seamlessly
+      uvs.setXY(i, wx / cs * 4, wz / cs * 4);
       const b = biomeAt(wx, wz);
-      const n = 0.75 + 0.25 * hash2(Math.round(wx * 2), Math.round(wz * 2));
-      let r, g, bl;
-      if (b.tint) { [r, g, bl] = b.tint; }
-      else {
-        const t = Math.min(1, Math.max(0, (h + CFG.hillHeight) / (2 * CFG.hillHeight)));
-        r = 0.22 + 0.2 * t; g = 0.32 + 0.08 * t; bl = 0.14 + 0.1 * t;
-      }
-      colors[i * 3] = r * n; colors[i * 3 + 1] = g * n; colors[i * 3 + 2] = bl * n;
+      const n = 0.8 + 0.2 * hash2(Math.round(wx * 2), Math.round(wz * 2));
+      this.lightAt(wx, h, wz, lit);
+      colors[i * 3] = b.tint[0] * n * lit[0]; colors[i * 3 + 1] = b.tint[1] * n * lit[1]; colors[i * 3 + 2] = b.tint[2] * n * lit[2];
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
@@ -226,7 +332,7 @@ export class World {
 
     const chunk = { mesh, inst: gen.inst, colliders: gen.colliders, items: gen.items, extra: [], biome: gen.biome };
     if (gen.ceiling) {
-      const cg = new THREE.PlaneGeometry(cs, cs, gen.ceiling.kind === 'cave' ? seg : 1, gen.ceiling.kind === 'cave' ? seg : 1);
+      const cg = new THREE.PlaneGeometry(cs, cs, seg, seg);
       cg.rotateX(Math.PI / 2);
       const cp = cg.attributes.position, cu = cg.attributes.uv;
       const cc = new Float32Array(cp.count * 3);
@@ -235,8 +341,9 @@ export class World {
         let h = gen.ceiling.h;
         if (gen.ceiling.kind === 'cave') h += 0.3 - fbm(wx * 0.07, wz * 0.07, 2) * 2.5;
         cp.setY(i, h); cu.setXY(i, wx / cs, wz / cs);
-        const n = 0.5 + 0.5 * hash2(Math.round(wx), Math.round(wz));
-        cc[i * 3] = n; cc[i * 3 + 1] = n; cc[i * 3 + 2] = n;
+        const n = 0.75 + 0.25 * hash2(Math.round(wx), Math.round(wz));
+        this.lightAt(wx, h - 0.5, wz, lit);
+        cc[i * 3] = n * lit[0] * 0.8; cc[i * 3 + 1] = n * lit[1] * 0.8; cc[i * 3 + 2] = n * lit[2] * 0.8;
       }
       cg.setAttribute('color', new THREE.BufferAttribute(cc, 3));
       cg.computeVertexNormals();
@@ -271,18 +378,41 @@ export class World {
 
   rebuildPools() {
     const counts = {};
-    for (const name in this.pools) counts[name] = 0;
+    const lit = [0, 0, 0];
+    for (const name in this.pools) { counts[name] = 0; this.pools[name].userData.flicker.length = 0; }
     for (const c of this.chunks.values()) {
       for (const p of c.inst) {
         const pool = this.pools[p.pool];
-        if (!pool || counts[p.pool] >= pool.count + 0 && counts[p.pool] >= pool.instanceMatrix.count) continue;
+        if (!pool || counts[p.pool] >= pool.instanceMatrix.count) continue;
         _q.setFromAxisAngle(_up, p.yaw);
         if (p.tilt) { _q2.setFromAxisAngle(_x, p.tilt); _q.multiply(_q2); }
         _m.compose(_v.set(p.x, p.y, p.z), _q, _s.set(p.sx, p.sy, p.sz));
-        pool.setMatrixAt(counts[p.pool]++, _m);
+        const i = counts[p.pool]++;
+        pool.setMatrixAt(i, _m);
+        if (pool.userData.lightPool) {
+          if (p.dead) pool.setColorAt(i, _c.setScalar(0.12));
+          else { pool.setColorAt(i, _c.setScalar(1)); if (hash2(Math.round(p.x * 3), Math.round(p.z * 3) + 5) < 0.22) pool.userData.flicker.push(i); }
+        } else {
+          this.lightAt(p.x, p.y + 0.6, p.z, lit);
+          pool.setColorAt(i, _c.setRGB(lit[0], lit[1], lit[2]));
+        }
       }
     }
-    for (const name in this.pools) { this.pools[name].count = counts[name]; this.pools[name].instanceMatrix.needsUpdate = true; }
+    for (const name in this.pools) { const p = this.pools[name]; p.count = counts[name]; p.instanceMatrix.needsUpdate = true; p.instanceColor.needsUpdate = true; }
+  }
+
+  // Some lights stutter. A cheap per-instance colour wobble on the emissive pools.
+  flicker() {
+    for (const pool of this.flickerPools) {
+      const f = pool.userData.flicker;
+      if (!f.length) continue;
+      for (const i of f) {
+        const t = this.time * (3 + (i % 5)) + i;
+        const k = Math.sin(t * 7) * Math.sin(t * 3.1) > 0.55 ? 0.15 + Math.random() * 0.3 : 1;
+        pool.setColorAt(i, _c.setScalar(k));
+      }
+      pool.instanceColor.needsUpdate = true;
+    }
   }
 
   chunkAt(x, z) { const cs = CFG.chunkSize; return this.chunks.get(this.key(Math.floor(x / cs), Math.floor(z / cs))); }
@@ -297,10 +427,9 @@ export class World {
       const c = this.chunks.get(this.key(cx + dx, cz + dz));
       if (c) for (const p of c.colliders) yield p;
     }
-    if (Math.hypot(x, z) < CFG.safeRadius + 3) for (const p of this.spawnColliders) yield p;
+    if (Math.hypot(x, z) < 18) for (const p of this.spawnColliders) yield p;
   }
 
-  // Sphere of radius rad at pos vs all colliders; `out` gets the push-out, returns hit.
   contact(pos, rad, out) {
     let hit = false;
     out.set(0, 0, 0);
@@ -310,22 +439,20 @@ export class World {
       if (p.kind === 'cyl') {
         const dx = pos.x - p.x, dz = pos.z - p.z, d = Math.hypot(dx, dz);
         if (pos.y > p.y0 - 0.3 && pos.y < p.y0 + p.h + rad) {
-          if (pos.y > p.y0 + p.h - rad && d < p.r) { out.y += p.y0 + p.h + rad - pos.y; hit = true; }   // standing on top
+          if (pos.y > p.y0 + p.h - rad && d < p.r) { out.y += p.y0 + p.h + rad - pos.y; hit = true; }
           else if (d < p.r + rad) { const k = d > 1e-4 ? (p.r + rad - d) / d : 1; out.x += dx * k; out.z += dz * k; hit = true; }
         }
       } else if (p.kind === 'sphere') {
         const dx = pos.x - p.x, dy = pos.y - p.y, dz = pos.z - p.z, dd = Math.hypot(dx, dy, dz);
         if (dd < p.r + rad && dd > 1e-4) { const k = (p.r + rad - dd) / dd; out.x += dx * k; out.y += dy * k; out.z += dz * k; hit = true; }
       } else {
-        // Box: closest point on the AABB.
         const cx = Math.max(p.x - p.hx, Math.min(p.x + p.hx, pos.x));
         const cy = Math.max(p.y0, Math.min(p.y0 + p.h, pos.y));
         const cz = Math.max(p.z - p.hz, Math.min(p.z + p.hz, pos.z));
-        let dx = pos.x - cx, dy = pos.y - cy, dz = pos.z - cz;
+        const dx = pos.x - cx, dy = pos.y - cy, dz = pos.z - cz;
         const dd = Math.hypot(dx, dy, dz);
         if (dd < rad) {
           if (dd < 1e-5) {
-            // Inside: push out along the thinnest axis.
             const px = p.hx - Math.abs(pos.x - p.x), pz = p.hz - Math.abs(pos.z - p.z), py = p.y0 + p.h - pos.y;
             if (py <= px && py <= pz) out.y += py + rad; else if (px < pz) out.x += (pos.x > p.x ? 1 : -1) * (px + rad); else out.z += (pos.z > p.z ? 1 : -1) * (pz + rad);
           } else { const k = (rad - dd) / dd; out.x += dx * k; out.y += dy * k; out.z += dz * k; }
@@ -336,7 +463,6 @@ export class World {
     return hit;
   }
 
-  // Keep a standing body (xz position, radius) out of walls and props.
   pushOutBody(pos, rad) {
     for (const p of this.nearby(pos.x, pos.z)) {
       if (p.kind === 'cyl') {
@@ -358,7 +484,6 @@ export class World {
     }
   }
 
-  // Floor under a point: ground, or the top of a box/cylinder below the body.
   floorAt(x, z, yRef) {
     let f = groundHeight(x, z);
     for (const p of this.nearby(x, z)) {

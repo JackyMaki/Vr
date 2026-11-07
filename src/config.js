@@ -1,8 +1,8 @@
 // Central tuning knobs. Everything gameplay-related that is worth tweaking lives here.
 export const CFG = {
   chunkSize: 24,          // metres per terrain chunk
-  chunkSegments: 10,      // grid cells per chunk edge (keep low for Quest)
-  loadRadius: 3,          // chunks loaded around the player in each direction
+  chunkSegments: 8,       // grid cells per chunk edge (keep low for Quest)
+  loadRadius: 2,          // chunks loaded around the player in each direction (indoors, fog hides the rest)
   fogDensity: 0.042,      // exp2 fog, ~60 m visibility
   hillHeight: 5,          // terrain amplitude
   safeRadius: 13,         // radius of the safe zone around the spawn

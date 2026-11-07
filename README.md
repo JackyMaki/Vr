@@ -6,19 +6,24 @@ the fog there are bigger, faster gorillas with red eyes, and they are hunting.
 
 ## What is in it
 
-- **Gorilla Tag locomotion** in VR: push off surfaces with your hands, climb anything you can
-  reach. Desktop fallback with WASD, mouse look, jump and sprint.
-- **An infinite world made of regions.** Every 96 m square is one biome, generated from
-  noise and streamed in chunks around you with a handful of instanced draw calls:
-  - **Forest**: pines, dead trees, bushes, grass, mushrooms, logs and rocks.
-  - **Backrooms**: a yellow wallpaper maze with carpet, drop ceilings and humming panels.
-  - **Caves**: near black, stalactites, rock pillars, glowing fungus, bones on the floor.
-  - **Factory**: machines, pipes, catwalks you can climb, barrels, hanging lamps, clanks.
-  - **Swamp**: sunken ground, water, reeds, dead trees, insects.
-  - **Graveyard**: rows of graves, fences, a crypt, crows in the dark.
-  Every surface has a procedural texture. Lighting, fog and ambience change per biome.
-- **Safe zone**: the lit stone platform at the spawn. Monsters cannot enter it. The guide
-  board on the platform explains the controls, and that is the only text in the game.
+- **Gorilla Tag locomotion** in VR: push off floors, walls, furniture and trees with your
+  hands, climb anything you can reach. Desktop fallback with WASD, mouse look, jump, sprint.
+- **An endless abandoned complex.** The map is indoors everywhere, split into 96 m wings
+  that stream in chunks around you with instanced draw calls. Every wing has walls with
+  doorways, a ceiling, and lights baked into the floors, ceilings and props so there are
+  pools of light and real darkness between them. Some lights flicker, some are dead.
+  - **Halls**: concrete corridors and rooms on an 8 m grid with doors, lockers, desks,
+    chairs, monitors, crate stacks, shelves, beds, corpses, blood, cobwebs, posters,
+    vents, pipes and cables.
+  - **Atrium**: an overgrown garden under a broken skylight, trees, moss, vines, planters.
+  - **Backrooms**: yellow wallpaper maze, carpet, drop ceilings, humming panels.
+  - **Caves**: dug below, near black, stalactites, pillars, glowing fungus, bone piles.
+  - **Factory**: machines, consoles, pipes, climbable catwalks, barrels, chains, lamps.
+  - **Sewer**: brick tunnels, a water channel, grates, wall lamps, slime.
+  - **Morgue**: tiled rooms, body drawers, slabs with corpses, trays, sinks, blood.
+  Every surface has a procedural texture. Lighting, fog and ambience change per wing.
+- **Safe room**: the lit room at the spawn. Monsters cannot enter it. The guide board on
+  its wall explains the controls, and that is the only text in the game.
 - **Terminal**: set a name and join a room by code. The first player on a code hosts it.
 - **Paint station**: pick a fur colour. The statue beside it shows it.
 - **Flashlight**: in your left hand in VR (X or A toggles it), on your shoulder on desktop
@@ -28,14 +33,14 @@ the fog there are bigger, faster gorillas with red eyes, and they are hunting.
   monster for a moment, and loud impacts draw monsters to the sound.
 - **Monsters**: textured, scarred gorillas 1.55x your size with red eyes, fangs, claws,
   exposed ribs and spines. They roam near players, roar, chase, sidestep walls, cannot
-  climb, and prowl the edge of the safe zone when you hide.
+  climb, and prowl the edge of the safe room when you hide.
 - **Death**: no death screen. The monster grabs you, lifts you to its face, and tears your
   head off. Your view is the head: it is flung away trailing blood, tumbles, lands and lies
-  there while it feeds on your body, then everything goes black and you wake up on the
-  platform. Other players see you lifted, the head torn off and thrown, and the body drop.
+  there while it feeds on your body, then everything goes black and you wake up in the
+  safe room. Other players see you lifted, the head torn off and thrown, and the body drop.
 - **Surround sound**: every world sound (roars, footsteps, growls, impacts, drips, clanks,
   voices) runs through an HRTF panner at its source, so a growl on your right is on your
-  right. Ambience beds crossfade per biome. A heartbeat speeds up as something closes in.
+  right. Ambience beds crossfade per wing. A heartbeat speeds up as something closes in.
 - **Voice chat**: once you join a room your mic streams to everyone in it over WebRTC, and
   their voices come from where their monkeys stand.
 - **Detailed monkeys**: faceted textured fur, brow ridge, crest, muzzle with nostrils, ears,
@@ -76,8 +81,8 @@ something this repo can do for you.
 | File | What it does |
 | --- | --- |
 | `src/main.js` | Boot, frame loop, VR session, biome lighting, remote players, kill handling |
-| `src/biomes.js` | Region map, per-biome terrain shaping and chunk content generators |
-| `src/world.js` | Chunk streaming, instanced prop pools, ceilings, water, collision queries |
+| `src/biomes.js` | Wing map, floor levels and the chunk content generator for each wing |
+| `src/world.js` | Chunk streaming, instanced prop pools, baked light, flicker, safe room, collisions |
 | `src/textures.js` | Procedural canvas textures for every surface |
 | `src/monkey.js` | Textured gorilla model, two-bone IK, walk, kill and victim poses |
 | `src/player.js` | Rig, hand-push locomotion, desktop controls, body physics, controller input |

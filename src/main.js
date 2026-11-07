@@ -31,7 +31,7 @@ const moon = new THREE.DirectionalLight(0x8a9bc4, 0.55);
 moon.position.set(-3, 8, -4);
 scene.add(moon);
 
-const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.05, 140);
+const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.05, 90);
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -177,10 +177,7 @@ if (navigator.xr) {
 }
 
 // ---------- Death presentation ----------
-const deathDome = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8),
-  new THREE.MeshBasicMaterial({ color: 0x5a0000, transparent: true, opacity: 0, side: THREE.BackSide, depthTest: false, depthWrite: false }));
-deathDome.renderOrder = 999; deathDome.visible = false; camera.add(deathDome);
-const blackout = new THREE.Mesh(deathDome.geometry,
+const blackout = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8),
   new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, side: THREE.BackSide, depthTest: false, depthWrite: false }));
 blackout.renderOrder = 1000; blackout.visible = false; camera.add(blackout);
 let fadeT = -1;
@@ -190,7 +187,7 @@ function isHost() { return !net.room || net.isHost; }
 function handleKill(id, mi) {
   const m = monsters.list[mi] || monsters.list[0];
   if (!m) return;
-  if (id === myId()) { if (!player.dead) { death.start(m); deathDome.visible = true; blackout.visible = true; } }
+  if (id === myId()) { if (!player.dead) { death.start(m); blackout.visible = true; } }
   else { const r = remotes.get(id); if (r) { r.deadT = 0; r.killer = m; r.ripped = false; } }
 }
 monsters.onKill = (id, mi) => { recentKills.set(id, now); net.broadcastKill(id, mi); handleKill(id, mi); };
@@ -301,9 +298,8 @@ const curSky = new THREE.Color(), curGround = new THREE.Color(), curFog = new TH
 let curBiome = null;
 function updateLighting(dt, x, z) {
   const b = biomeAt(x, z);
-  const inSpawn = Math.hypot(x, z) < CFG.safeRadius + 30;
-  const L = inSpawn ? { sky: 0x33424f, ground: 0x0d0b09, i: 0.85, moon: 0.55 } : b.light;
-  const F = inSpawn ? { color: 0x04060a, d: CFG.fogDensity } : b.fog;
+  const inSpawn = false;
+  const L = b.light, F = b.fog;
   const k = Math.min(1, dt * 1.2);
   hemi.color.lerp(curSky.set(L.sky), k); hemi.groundColor.lerp(curGround.set(L.ground), k);
   hemi.intensity += (L.i - hemi.intensity) * k;
@@ -328,12 +324,11 @@ renderer.setAnimationLoop(() => {
   player.update(dt);
   if (death.active) {
     const done = death.update(dt);
-    deathDome.material.opacity = death.blood * 0.55; blackout.material.opacity = death.black;
-    $('blood').style.opacity = death.blood; $('fade').style.opacity = death.black;
-    if (done) { deathDome.visible = false; deathDome.material.opacity = 0; $('blood').style.opacity = 0; fadeT = 0; audio.respawn(); }
+    blackout.material.opacity = death.black; $('fade').style.opacity = death.black;
+    if (done) { fadeT = 0; audio.respawn(); }
   }
   player.headPos(_head);
-  world.update(_head);
+  world.update(_head, dt);
 
   const host = isHost();
   if (host) monsters.setCount(CFG.baseMonsters + 1 + remotes.size);
