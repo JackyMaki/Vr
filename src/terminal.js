@@ -117,3 +117,36 @@ function roundRect(g, x, y, w, h, r) {
   g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h); g.lineTo(x + r, y + h);
   g.quadraticCurveTo(x, y + h, x, y + h - r); g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y); g.closePath();
 }
+
+// Static how-to board on the platform (the only instructions in the game).
+export class Guide extends Panel {
+  constructor(mesh) {
+    super(mesh, 1200, 800);
+    this.draw();
+  }
+  draw() {
+    const g = this.ctx;
+    g.fillStyle = '#0b0d0b'; g.fillRect(0, 0, this.w, this.h);
+    g.strokeStyle = '#3fbf7f'; g.lineWidth = 6; g.strokeRect(14, 14, this.w - 28, this.h - 28);
+    g.fillStyle = '#b7ffcf'; g.font = 'bold 56px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('HOLLOW CANOPY', this.w / 2, 70);
+    g.font = '30px monospace'; g.textAlign = 'left'; g.fillStyle = '#dfffe9';
+    const lines = [
+      'HEADSET   push off ground and trees with your hands to move.',
+      '          grab trees and walls to climb. GRIP grabs items,',
+      '          let go to throw. X / A toggles your flashlight.',
+      '          point at a screen and pull TRIGGER to use it.',
+      '',
+      'DESKTOP   WASD move, SHIFT sprint, SPACE jump, mouse look.',
+      '          E pick up, click throw, Q drop, F flashlight.',
+      '',
+      'The lit platform is safe. They cannot step onto it.',
+      'They are bigger and faster than you. They cannot climb.',
+      'A thrown rock to the head stuns one for a moment.',
+      'Backrooms, caves, a factory, a swamp and graves lie out there.',
+      'Join a room at the terminal to play with friends. Voice is on.',
+    ];
+    lines.forEach((l, i) => g.fillText(l, 50, 140 + i * 46));
+    this.texture.needsUpdate = true;
+  }
+}

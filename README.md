@@ -1,31 +1,45 @@
 # Hollow Canopy
 
 A Gorilla Tag style VR horror game that runs in a browser. You are a monkey with no legs
-and long arms. You move by pushing off the ground and trees with your hands. Out in the fog
-there are bigger, faster monkeys with red eyes, and they are hunting.
+and long arms. You move by pushing off the ground, trees and walls with your hands. Out in
+the fog there are bigger, faster gorillas with red eyes, and they are hunting.
 
-## Features
+## What is in it
 
-- **Gorilla Tag locomotion** in VR: push off surfaces with your hands, climb trees and the
-  spawn totem by grabbing them. Desktop fallback with WASD, mouse look, jump and sprint.
-- **Infinite map**: the forest is generated from noise and streamed in chunks. Only chunks
-  near you are loaded, trees and rocks are drawn with a handful of instanced draw calls, and
-  thick fog hides the loading edge.
-- **Safe zone**: the lit stone platform at the spawn. Monsters cannot enter it. The glowing
-  green ring marks the edge.
-- **Terminal**: the screen on the platform lets you type a name and join a room by code.
-  The first person to join a code hosts it. Everyone else in that room sees each other,
-  with names over their heads and arms that follow their real hands.
-- **Paint station**: the screen on the east side of the platform. Pick a fur colour, the
-  statue next to it shows it, and others see it on your monkey.
-- **Monsters**: host-run AI gorillas, 1.55x your size and a little faster than you. They roam
-  near the players, roar when they spot you, chase you, and prowl the edge of the safe zone
-  when you hide. They cannot climb, so a high tree is the other way to survive.
-- **Gore and death**: a catch sprays blood droplets, ground splats and chunks, the monster
-  slams into the corpse, your view collapses to the ground under a red haze, and you respawn
-  on the platform a few seconds later. Other players see your monkey fall and bleed.
-- **Procedural audio**: wind, a drone, a heartbeat that speeds up as something gets closer,
-  roars, footsteps, and a death scream. No audio files.
+- **Gorilla Tag locomotion** in VR: push off surfaces with your hands, climb anything you can
+  reach. Desktop fallback with WASD, mouse look, jump and sprint.
+- **An infinite world made of regions.** Every 96 m square is one biome, generated from
+  noise and streamed in chunks around you with a handful of instanced draw calls:
+  - **Forest**: pines, dead trees, bushes, grass, mushrooms, logs and rocks.
+  - **Backrooms**: a yellow wallpaper maze with carpet, drop ceilings and humming panels.
+  - **Caves**: near black, stalactites, rock pillars, glowing fungus, bones on the floor.
+  - **Factory**: machines, pipes, catwalks you can climb, barrels, hanging lamps, clanks.
+  - **Swamp**: sunken ground, water, reeds, dead trees, insects.
+  - **Graveyard**: rows of graves, fences, a crypt, crows in the dark.
+  Every surface has a procedural texture. Lighting, fog and ambience change per biome.
+- **Safe zone**: the lit stone platform at the spawn. Monsters cannot enter it. The guide
+  board on the platform explains the controls, and that is the only text in the game.
+- **Terminal**: set a name and join a room by code. The first player on a code hosts it.
+- **Paint station**: pick a fur colour. The statue beside it shows it.
+- **Flashlight**: in your left hand in VR (X or A toggles it), on your shoulder on desktop
+  (F). Decent range, warm, and it stutters or drops out now and then.
+- **Throwables**: rocks, bottles, cans, bricks, bones, skulls and wrenches lie around.
+  Grip to grab in VR and let go to throw; E, click and Q on desktop. A hard hit stuns a
+  monster for a moment, and loud impacts draw monsters to the sound.
+- **Monsters**: textured, scarred gorillas 1.55x your size with red eyes, fangs, claws,
+  exposed ribs and spines. They roam near players, roar, chase, sidestep walls, cannot
+  climb, and prowl the edge of the safe zone when you hide.
+- **Death**: no death screen. The monster grabs you, lifts you to its face, and tears your
+  head off. Your view is the head: it is flung away trailing blood, tumbles, lands and lies
+  there while it feeds on your body, then everything goes black and you wake up on the
+  platform. Other players see you lifted, the head torn off and thrown, and the body drop.
+- **Surround sound**: every world sound (roars, footsteps, growls, impacts, drips, clanks,
+  voices) runs through an HRTF panner at its source, so a growl on your right is on your
+  right. Ambience beds crossfade per biome. A heartbeat speeds up as something closes in.
+- **Voice chat**: once you join a room your mic streams to everyone in it over WebRTC, and
+  their voices come from where their monkeys stand.
+- **Detailed monkeys**: faceted textured fur, brow ridge, crest, muzzle with nostrils, ears,
+  pecs, elbows that bend with two-bone IK. Remote players' arms follow their real hands.
 
 ## Run it
 
@@ -33,35 +47,47 @@ WebXR needs HTTPS or `localhost`, so serve the folder:
 
 ```bash
 python3 -m http.server 8000
-# then open http://localhost:8000
+# open http://localhost:8000
 ```
 
-On a headset, open the same URL over HTTPS (GitHub Pages works: enable it for this repo and
-open the page in the headset browser) and press **ENTER VR**. Point a controller at a
-screen and pull the trigger to use it.
+On a headset, open the page over HTTPS (GitHub Pages works) and press **ENTER VR**.
 
-Multiplayer uses PeerJS over WebRTC with the public PeerJS signalling server, so nothing
-needs hosting beyond the static files. Two players on very strict networks may fail to
+Multiplayer and voice use PeerJS over WebRTC with the public PeerJS signalling server, so
+nothing needs hosting beyond the static files. Players on very strict networks may fail to
 connect to each other; that is a WebRTC limitation.
+
+## Meta Quest Store
+
+The game is a Progressive Web App (`manifest.json` and icons are included). Meta lets PWAs
+be packaged into an APK and published to the Quest Store or App Lab. The outline:
+
+1. Host the game on HTTPS (GitHub Pages is enough).
+2. Create a Meta developer account at developer.oculus.com, verify it, and create an
+   organization and an app.
+3. Install Meta Quest Developer Hub, use its PWA packaging tool with the hosted URL to
+   produce an APK, and upload that build to the app's release channel.
+4. Fill in the store listing (screenshots, description, age rating) and submit for review.
+
+Each of those steps needs a real person signed in to the Meta account, so they are not
+something this repo can do for you.
 
 ## Layout
 
 | File | What it does |
 | --- | --- |
-| `src/main.js` | Boots everything, the frame loop, VR session, overlays, remote players |
-| `src/world.js` | Terrain height, chunk streaming, instanced props, colliders, spawn zone |
-| `src/player.js` | Rig, hand-push locomotion, desktop controls, body physics, death/respawn |
-| `src/monsters.js` | Monster AI (host), interpolation (clients), kill detection |
-| `src/monkey.js` | Procedural gorilla model for players and monsters, animation |
-| `src/terminal.js` | Canvas-drawn screens: name/room terminal and paint station |
+| `src/main.js` | Boot, frame loop, VR session, biome lighting, remote players, kill handling |
+| `src/biomes.js` | Region map, per-biome terrain shaping and chunk content generators |
+| `src/world.js` | Chunk streaming, instanced prop pools, ceilings, water, collision queries |
+| `src/textures.js` | Procedural canvas textures for every surface |
+| `src/monkey.js` | Textured gorilla model, two-bone IK, walk, kill and victim poses |
+| `src/player.js` | Rig, hand-push locomotion, desktop controls, body physics, controller input |
+| `src/monsters.js` | Monster AI (host), interpolation (clients), kill choreography, stun |
+| `src/death.js` | First-person head-rip death sequence |
+| `src/items.js` | Throwable items: spawning, grabbing, throwing, physics |
+| `src/flashlight.js` | The flickering torch |
+| `src/audio.js` | Spatial procedural sound and biome ambience |
+| `src/voice.js` | WebRTC voice mesh with positional playback |
+| `src/terminal.js` | Canvas screens: terminal, paint station, guide board |
 | `src/net.js` | PeerJS rooms: host election, state relay, kill events |
-| `src/gore.js` | Blood particles, splats, chunks |
-| `src/audio.js` | Synthesized sound |
-| `src/config.js` | Tuning values (speeds, sizes, fog, chunk radius) |
-
-## Swapping in real models
-
-`buildMonkey()` in `src/monkey.js` returns a group whose `userData.parts` names the body,
-head, arms and hands. Load a GLB and fill those same slots and the animation, networking
-and monsters keep working. The monster variant is the same builder with `monster: true`,
-so a scarier mesh only needs to go in there.
+| `src/gore.js` | Blood droplets, splats, chunks |
+| `src/config.js` | Tuning values |

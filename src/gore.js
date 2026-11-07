@@ -53,6 +53,16 @@ export class Gore {
     for (let k = 0; k < 5; k++) this.chunk(p, power);
   }
 
+  // A few droplets with little spread (blood trail).
+  drip(p) {
+    for (let k = 0; k < 6; k++) {
+      const i = this.cursor; this.cursor = (this.cursor + 1) % this.N;
+      this.pos[i * 3] = p.x; this.pos[i * 3 + 1] = p.y - 0.15; this.pos[i * 3 + 2] = p.z;
+      this.vel[i * 3] = (Math.random() - 0.5) * 1.5; this.vel[i * 3 + 1] = -1 + Math.random(); this.vel[i * 3 + 2] = (Math.random() - 0.5) * 1.5;
+      this.life[i] = 1.5 + Math.random();
+    }
+  }
+
   splat(p, r) {
     const m = this.splats[this.splatCursor]; this.splatCursor = (this.splatCursor + 1) % this.splats.length;
     m.position.set(p.x, groundHeight(p.x, p.z) + 0.012, p.z);

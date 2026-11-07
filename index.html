@@ -4,64 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Hollow Canopy</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#04060a">
   <style>
-    html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
-                 font-family: system-ui, -apple-system, sans-serif; color: #ddd; }
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
     canvas { display: block; }
     #hud { position: fixed; inset: 0; pointer-events: none; }
-    #panel {
-      position: absolute; top: 14px; left: 14px; max-width: 340px;
-      background: rgba(5, 8, 10, .72); border: 1px solid #2a3a33; border-radius: 10px;
-      padding: 12px 14px; font-size: 14px; line-height: 1.5; pointer-events: auto;
-    }
-    #panel h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: 2px; color: #b7ffcf; }
-    #panel .dim { color: #8a9a92; font-size: 12px; }
-    #status { margin-top: 8px; color: #ffd166; font-size: 13px; }
     #vrbtn {
-      position: absolute; right: 16px; bottom: 16px; pointer-events: auto;
+      position: absolute; right: 16px; bottom: 16px; pointer-events: auto; display: none;
       background: #0d1f16; color: #b7ffcf; border: 2px solid #3fbf7f; border-radius: 10px;
-      padding: 12px 20px; font-size: 16px; font-weight: 700; letter-spacing: 1px; cursor: pointer;
+      padding: 12px 20px; font: 700 16px system-ui, sans-serif; letter-spacing: 1px; cursor: pointer;
     }
-    #vrbtn:disabled { opacity: .45; cursor: default; }
-    #crosshair {
-      position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
-      border-radius: 50%; background: rgba(255,255,255,.7); box-shadow: 0 0 6px #000;
-    }
-    #vignette { position: absolute; inset: 0; background: radial-gradient(circle, transparent 55%, rgba(0,0,0,.75));
-                opacity: 1; }
-    #blood { position: absolute; inset: 0; background: radial-gradient(circle, rgba(120,0,0,0) 30%, rgba(90,0,0,.95));
-             opacity: 0; transition: opacity .25s; }
+    #blood { position: absolute; inset: 0; background: radial-gradient(circle, rgba(120,0,0,0) 25%, rgba(90,0,0,.95)); opacity: 0; }
     #fade { position: absolute; inset: 0; background: #000; opacity: 0; }
-    #dead { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-            font-size: 64px; font-weight: 900; letter-spacing: 8px; color: #c00; opacity: 0;
-            text-shadow: 0 0 30px #600; }
-    #warn { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: #ff6b6b;
-            font-size: 15px; font-weight: 700; letter-spacing: 2px; text-shadow: 0 0 10px #000; opacity: 0; }
+    #crosshair { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2px 0 0 -2px;
+                 border-radius: 50%; background: rgba(255,255,255,.55); }
   </style>
 </head>
 <body>
   <div id="hud">
-    <div id="vignette"></div>
     <div id="blood"></div>
     <div id="fade"></div>
-    <div id="dead">YOU DIED</div>
-    <div id="warn">SOMETHING IS CLOSE</div>
     <div id="crosshair"></div>
-    <div id="panel">
-      <h1>HOLLOW CANOPY</h1>
-      <div class="dim">A Gorilla Tag style horror game. You are a monkey. They are bigger.</div>
-      <div style="margin-top:8px">
-        <b>VR:</b> push off the ground and trees with your hands to move. Point at a screen and pull the trigger to use it.<br>
-        <b>Desktop:</b> click to look, <b>WASD</b> move, <b>Space</b> jump, <b>Shift</b> sprint, click screens to use them.
-      </div>
-      <div class="dim" style="margin-top:6px">The lit platform is safe. The fog is not.</div>
-      <div id="status">Loading...</div>
-    </div>
-    <button id="vrbtn" disabled>VR NOT AVAILABLE</button>
+    <button id="vrbtn">ENTER VR</button>
   </div>
-  <script type="importmap">
-    { "imports": { "three": "./vendor/three.module.js" } }
-  </script>
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
   <script src="./vendor/peerjs.min.js"></script>
   <script type="module" src="./src/main.js"></script>
 </body>

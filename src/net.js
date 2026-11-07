@@ -11,10 +11,12 @@ export class Net {
     this.hostConn = null;      // client
     this.states = new Map();   // host: id -> last state from each client
     this.id = null;
+    this.onPeer = null;       // (peer) whenever a Peer is created, for voice
   }
 
   get connected() { return this.room !== null && (this.isHost || (this.hostConn && this.hostConn.open)); }
   get playerCount() { return this.isHost ? this.conns.size + 1 : this.states.size + 1; }
+  peerIds() { return this.isHost ? [...this.conns.keys()] : [...this.states.keys()].filter(id => id !== this.id); }
 
   join(code) {
     if (typeof Peer === 'undefined') { this.cb.onStatus('Network library failed to load'); return; }
@@ -25,7 +27,7 @@ export class Net {
     // Try to become the host first; the id is taken if a host already exists.
     const peer = new Peer(PREFIX + code);
     this.peer = peer;
-    peer.on('open', (id) => { this.id = id; this.becomeHost(); });
+    peer.on('open', (id) => { this.id = id; this.becomeHost(); if (this.onPeer) this.onPeer(peer, id); });
     peer.on('error', (e) => {
       if (e.type === 'unavailable-id') { peer.destroy(); this.connectAsClient(code); }
       else if (e.type === 'peer-unavailable') { this.cb.onStatus('Host vanished, retrying...'); setTimeout(() => this.join(code), 1500); }
@@ -56,13 +58,14 @@ export class Net {
     this.peer = peer; this.isHost = false;
     peer.on('open', (id) => {
       this.id = id;
+      if (this.onPeer) this.onPeer(peer, id);
       const conn = peer.connect(PREFIX + code, { reliable: false, serialization: 'json' });
       this.hostConn = conn;
       conn.on('open', () => this.cb.onStatus('IN room ' + code + '  -  connected'));
       conn.on('data', (d) => {
         if (!d) return;
         if (d.t === 'w') { this.states = new Map(Object.entries(d.p)); this.cb.onWorld(d.p, d.m); }
-        else if (d.t === 'k') this.cb.onKill(d.id, d.p);
+        else if (d.t === 'k') this.cb.onKill(d.id, d.m);
       });
       const drop = () => { if (this.room) { this.cb.onStatus('Lost the host. Rejoin to play together.'); this.leave(); } };
       conn.on('close', drop); conn.on('error', drop);
@@ -95,9 +98,9 @@ export class Net {
     for (const c of this.conns.values()) if (c.open) c.send(msg);
   }
 
-  broadcastKill(id, pos) {
+  broadcastKill(id, monsterIndex) {
     if (!this.isHost) return;
-    const msg = { t: 'k', id, p: [pos.x, pos.y, pos.z] };
+    const msg = { t: 'k', id, m: monsterIndex };
     for (const c of this.conns.values()) if (c.open) c.send(msg);
   }
 }
